@@ -12,7 +12,7 @@
 CFG_ENV_NAME = "CLOUD_CFG"
 
 # This is expected to be a yaml formatted file
-CLOUD_CONFIG = "%%PREFIX%%/etc/cloud/cloud.cfg"
+CLOUD_CONFIG = "/usr/local/etc/cloud/cloud.cfg"
 
 CLEAN_RUNPARTS_DIR = "/etc/cloud/clean.d"
 
@@ -59,7 +59,7 @@ CFG_BUILTIN = {
     "system_info": {
         "paths": {
             "cloud_dir": "/var/lib/cloud",
-            "templates_dir": "%%PREFIX%%/etc/cloud/templates/",
+            "templates_dir": "/usr/local/etc/cloud/templates/",
         },
         "distro": "ubuntu",
         "network": {"renderers": None},
