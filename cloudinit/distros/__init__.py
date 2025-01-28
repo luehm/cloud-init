@@ -62,6 +62,7 @@ OSFAMILIES = {
     "arch": ["arch"],
     "debian": ["debian", "ubuntu"],
     "freebsd": ["freebsd", "dragonfly"],
+    "pfsense": ["pfsense"],
     "gentoo": ["gentoo", "cos"],
     "netbsd": ["netbsd"],
     "openbsd": ["openbsd"],

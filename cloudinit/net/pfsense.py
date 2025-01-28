@@ -1,107 +1,138 @@
+# Copyright (C) 2025 Alex Luehm
+#
+# Author: Alex Luehm <alex@luehm.com>
+#
 # This file is part of cloud-init. See LICENSE file for license information.
 
-import logging, xml.etree.ElementTree as ET
+import bcrypt
+import logging
 
 import cloudinit.net.bsd
 from cloudinit import distros, net, subp, util
+from cloudinit.distros import pfsense_utils as pf_utils
 
 LOG = logging.getLogger(__name__)
 
 
 class Renderer(cloudinit.net.bsd.BSDRenderer):
-    def _set_config_value(self, key, value):
+    def create_group(self, name, gid=None):
+        raise NotImplementedError()
+
+    def add_user_to_group(self, user, group):
+
+        next_gid_node = "./system/nextgid"
+        raise NotImplementedError()
+
+    def set_passwd(self, user, passwd, hashed=False):
         """
-        For the givem xml path in key, set the value to the given value
-        """
-    def _get_config_value(self, key):
-        """
-        For the given xml path in key, get the value
+        Set the password for a user
         """
 
-    def __init__(self, config=None):
-        self._route_cpt = 0
-        self.config_path = "/cf/conf/config.xml"
-        super(Renderer, self).__init__()
+        # Check if user exists
+        user_node = "./system/user"
+        users = pf_utils.get_config_element(user_node)
+        n = None
+        for u in users:
+            if u["name"] == user:
+                n = u
+                break
+        if n is None:
+            #LOG.error("User %s does not exist", user)
+            return False
 
-    def rename_interface(self, cur_name, device_name):
-        self.set_rc_config_value("ifconfig_%s_name" % cur_name, device_name)
-
-    def write_config(self):
-        for device_name, v in self.interface_configurations.items():
-            if isinstance(v, dict):
-                net_config = "inet %s netmask %s" % (
-                    v.get("address"),
-                    v.get("netmask"),
-                )
-                mtu = v.get("mtu")
-                if mtu:
-                    net_config += " mtu %d" % mtu
-            elif v == "DHCP":
-                net_config = "DHCP"
-            self.set_rc_config_value("ifconfig_" + device_name, net_config)
-
-        for device_name, v in self.interface_configurations_ipv6.items():
-            if isinstance(v, dict):
-                net_config = "inet6 %s/%d" % (
-                    v.get("address"),
-                    v.get("prefix"),
-                )
-                mtu = v.get("mtu")
-                if mtu:
-                    net_config += " mtu %d" % mtu
-            self.set_rc_config_value(
-                "ifconfig_%s_ipv6" % device_name, net_config
-            )
-
-    def start_services(self, run=False):
-        if not run:
-            LOG.debug("freebsd generate postcmd disabled")
-            return
-
-        for dhcp_interface in self.dhcp_interfaces():
-            # Observed on DragonFlyBSD 6. If we use the "restart" parameter,
-            # the routes are not recreated.
-            net.dhcp.IscDhclient.stop_service(
-                dhcp_interface, distros.freebsd.Distro
-            )
-
-        subp.subp(["service", "netif", "restart"], capture=True)
-        # On FreeBSD 10, the restart of routing and dhclient is likely to fail
-        # because
-        # - routing: it cannot remove the loopback route, but it will still set
-        #   up the default route as expected.
-        # - dhclient: it cannot stop the dhclient started by the netif service.
-        # In both case, the situation is ok, and we can proceed.
-        subp.subp(["service", "routing", "restart"], capture=True, rcs=[0, 1])
-
-        for dhcp_interface in self.dhcp_interfaces():
-            net.dhcp.IscDhclient.start_service(
-                dhcp_interface, distros.freebsd.Distro
-            )
-
-    def set_route(self, network, netmask, gateway):
-        if network == "0.0.0.0":
-            self.set_rc_config_value("defaultrouter", gateway)
-        elif network == "::":
-            self.set_rc_config_value("ipv6_defaultrouter", gateway)
-        else:
-            route_name = f"net{self._route_cpt}"
-            if ":" in network:
-                route_cmd = f"-net {network}/{netmask} {gateway}"
-                self.set_rc_config_value("ipv6_route_" + route_name, route_cmd)
-                self.route6_names = f"{self.route6_names} {route_name}"
-                self.set_rc_config_value(
-                    "ipv6_static_routes", self.route6_names.strip()
-                )
+        # Set password
+        if hashed:
+            # Check if password is bcrypt format
+            if passwd.startswith("$2a$"):
+                n["bcrypt-hash"] = passwd
+                pf_utils.set_config_value(user_node + "/bcrypt-hash", passwd)
             else:
-                route_cmd = f"-net {network} -netmask {netmask} {gateway}"
-                self.set_rc_config_value("route_" + route_name, route_cmd)
-                self.route_names = f"{self.route_names} {route_name}"
-                self.set_rc_config_value(
-                    "static_routes", self.route_names.strip()
-                )
-            self._route_cpt += 1
+                print("Invalid bcrypt hash: %s", passwd)
+                #LOG.error("Invalid bcrypt hash: %s", passwd)
+        else:
+            # Generate bcrypt hash of user password
+            n["bcrypt-hash"] = bcrypt.hashpw(passwd.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
+        pf_utils.replace_config_element(user_node, "name", user, n)
 
-def available(target=None):
-    return util.is_FreeBSD() or util.is_DragonFlyBSD()
+        return True
+
+    def lock_passwd(self, user):
+        raise NotImplementedError()
+
+    def chpasswd(self, user, passwd):
+        raise NotImplementedError()
+
+    def add_user(self, name, **kwargs):
+        """
+        Add a user to the system
+        Users are stored within the pfsense/system element as a new user entry
+
+        Supported user properties:
+        - gecos: User description
+        - lock_passwd: Lock user password
+        - expiredate: User expiration date
+        - groups: List of groups to add user to
+        - name: User name
+
+        Supported in other modules:
+        - groups
+        - ssh_authorized_keys
+        - plain_text_passwd
+        - hashed_passwd
+        - passwd
+        """
+
+        user_node = "./system/user"
+        next_uid_node = "./system/nextuid"
+
+        # Check if user already exists
+        users = pf_utils.get_config_element(user_node)
+        if [u for u in users if u["name"] == name]:
+            #LOG.info("User %s already exists, skipping.", name)
+            return False
+
+        uid = pf_utils.get_config_value(next_uid_node)
+
+        if name == None or name == "":
+            #LOG.error("User name cannot be empty")
+            return False
+
+        # Create new user
+        user = {}
+        user["name"] = name
+        user["uid"] = uid
+
+        pf_utils.set_config_value(next_uid_node, str(int(uid) + 1))
+
+        supported_user_passwd_formats = {
+            "plain_text_passwd": False,
+            "hashed_passwd": True,
+            "passwd": True
+        }
+
+        for key, val in kwargs.items():
+            if key == "gecos":
+                user["descr"] = val
+            elif key == "lock_passwd":
+                user["disabled"] = None
+            elif key == "expiredate":
+                user["expires"] = val
+            elif key == "groups":
+                for group in val:
+                    self.add_user_to_group(name, group)
+            elif key == "ssh_authorized_keys":
+                for key in val:
+                    self.add_ssh_key(name, key)
+            elif not [k for k in supported_user_passwd_formats.keys() if k == key]:
+                #LOG.warning("Unsupported user property: %s", key)
+                print(f"Unsupported user property: {key}")
+
+        # Add user to system element
+        pf_utils.append_config_element(user_node, user)
+
+        for key, val in kwargs.items():
+            if [k for k in supported_user_passwd_formats.keys() if k == key]:
+                self.set_passwd(name, val, supported_user_passwd_formats[key])
+
+        return True
