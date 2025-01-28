@@ -176,7 +176,7 @@ INITSYS_TYPES = sorted([f.partition(".")[0] for f in INITSYS_ROOTS.keys()])
 # Install everything in the right location and take care of Linux (default) and
 # FreeBSD systems.
 USR = "usr"
-ETC = "%%PREFIX%%/etc"
+ETC = "/usr/local/etc"
 USR_LIB_EXEC = "usr/lib"
 LIB = "lib"
 if os.uname()[0] in ["FreeBSD", "DragonFly", "OpenBSD"]:
