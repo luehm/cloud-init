@@ -9,14 +9,10 @@ import logging
 from datetime import datetime
 
 import cloudinit.distros.freebsd
-from cloudinit import subp, util
+from cloudinit import subp
 import cloudinit.distros.pfsense_utils as pf_utils
 
-#from cloudinit.distros.networking import FreeBSDNetworking
-from cloudinit.settings import PER_INSTANCE
-
 LOG = logging.getLogger(__name__)
-
 
 class Distro(cloudinit.distros.freebsd.Distro):
     """
@@ -40,15 +36,15 @@ class Distro(cloudinit.distros.freebsd.Distro):
         Groups are stored within the pfsense/system element as a new group entry
         """
 
+        # Check if name is empty
+        if name in [None, ""]:
+            LOG.info("Unable to create group, name cannot be empty")
+            return False
+
         # Check if group already exists
         groups = pf_utils.get_config_element(Distro.group_node)
         if [g for g in groups if g["name"] == name]:
             LOG.info("Group %s already exists, skipping.", name)
-            return False
-
-        # Check if name is empty
-        if name in [None, ""]:
-            LOG.info("Unable to create group, name cannot be empty")
             return False
 
         # Get next available gid
@@ -64,11 +60,11 @@ class Distro(cloudinit.distros.freebsd.Distro):
         # Increment next gid tracker
         pf_utils.set_config_value(Distro.next_gid_node, str(int(gid) + 1))
 
+        # Restructure provided members as a list
         if not members:
             members = []
         elif not isinstance(members, list):
             members = [members]
-
 
         # Add group members which currently exist on system
         group["member"] = []
@@ -101,7 +97,7 @@ class Distro(cloudinit.distros.freebsd.Distro):
         if group is None:
             return False
 
-        # If group has no members, create empty list
+        # Restructure group members as a list
         if not "member" in group:
             group["member"] = []
 
@@ -118,13 +114,13 @@ class Distro(cloudinit.distros.freebsd.Distro):
         pf_utils.replace_config_element(Distro.group_node, "name", group_name, group)
         return True
 
-
     def _add_ssh_key(self, user, key):
         raise NotImplementedError()
 
     def set_passwd(self, user, passwd, hashed=False):
         """
         Set the password for a user
+        Stored as bcrypt has in config.xml
         """
 
         # Check if name is empty
@@ -134,30 +130,29 @@ class Distro(cloudinit.distros.freebsd.Distro):
 
         # Check if user exists
         users = pf_utils.get_config_element(Distro.user_node)
-        n = None
+        node = None
         for u in users:
             if u["name"] == user:
-                n = u
+                node = u
                 break
-        if n is None:
+        if node is None:
             LOG.info("User %s does not exist", user)
             return False
 
         # Set password
         if hashed:
             # Check if password is bcrypt format
-            if passwd.startswith("$2a$"):
-                n["bcrypt-hash"] = passwd
-                pf_utils.set_config_value(Distro.user_node + "/bcrypt-hash", passwd)
+            if passwd.startswith("$2"):
+                node["bcrypt-hash"] = passwd
+                pf_utils.replace_config_element(Distro.user_node, "name", user, node)
             else:
-                print("Invalid bcrypt hash: %s", passwd)
                 LOG.info("Invalid bcrypt hash for user %s, skipping", user)
                 return False
         else:
             # Generate bcrypt hash of user password
-            n["bcrypt-hash"] = bcrypt.hashpw(passwd.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+            node["bcrypt-hash"] = bcrypt.hashpw(passwd.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
-            pf_utils.replace_config_element(Distro.user_node, "name", user, n)
+            pf_utils.replace_config_element(Distro.user_node, "name", user, node)
 
         return True
 
@@ -178,19 +173,19 @@ class Distro(cloudinit.distros.freebsd.Distro):
 
         # Check if user exists
         users = pf_utils.get_config_element(Distro.user_node)
-        n = None
+        node = None
         for u in users:
             if u["name"] == name:
-                n = u
+                node = u
                 break
 
-        if n is None:
+        if node is None:
             LOG.info("User %s does not exist", name)
             return False
 
         # Lock user password
-        n["disabled"] = ""
-        pf_utils.replace_config_element(Distro.user_node, "name", name, n)
+        node["disabled"] = ""
+        pf_utils.replace_config_element(Distro.user_node, "name", name, node)
         return True
 
     def expire_passwd(self, user):
@@ -209,21 +204,20 @@ class Distro(cloudinit.distros.freebsd.Distro):
 
         # Check if user exists
         users = pf_utils.get_config_element(Distro.user_node)
-        n = None
+        node = None
         for u in users:
             if u["name"] == name:
-                n = u
+                node = u
                 break
 
-        if n is None:
+        if node is None:
             LOG.info("User %s does not exist", name)
             return False
 
         # Unlock user password
-        del n["disabled"]
-        pf_utils.replace_config_element(Distro.user_node, "name", name, n)
+        del node["disabled"]
+        pf_utils.replace_config_element(Distro.user_node, "name", name, node)
         return True
-
 
     def add_user(self, name, **kwargs):
         """
@@ -233,15 +227,16 @@ class Distro(cloudinit.distros.freebsd.Distro):
         Supported user properties:
         - gecos: User description
         - lock_passwd: Lock user password
-        - expiredate: User expiration date
+        - expiredate: User expiration date (YYYY-MM-DD)
         - groups: List of groups to add user to
         - name: User name
         - groups[list]: List of groups to add user to
-        - ssh_authorized_keys
-        - plain_text_passwd
-        - hashed_passwd
-        - passwd
+        - plain_text_passwd: Plaintext password
+        - hashed_passwd: bcrypt hashed password
+        - passwd bcrypt hashed password
 
+        Pending:
+        - ssh_authorized_keys
         """
 
         # Check if name is empty
@@ -287,5 +282,10 @@ class Distro(cloudinit.distros.freebsd.Distro):
                 for group in val:
                     if not self._add_user_to_group(uid, group):
                         LOG.warning("Unable to add user '%s' to group '%s - group does not exist'", name, group)
+            elif key == "passwd":
+
+                # This doesn't seem to be implemented in the
+                # Distro class - handling here
+                self.set_passwd(name, val, hashed=True)
 
         return True

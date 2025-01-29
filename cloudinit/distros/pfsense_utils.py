@@ -157,12 +157,16 @@ def set_config_value(tree_path, value, fp="/cf/conf/config.xml"):
     xml_parser = ET.XMLParser(remove_blank_text=True)
     tree = ET.parse(fp, xml_parser)
     root = tree.getroot()
-    n = root.find(tree_path)
-    if n is None:
-        raise ValueError("No such key: %s" % tree_path)
+    node = root.find(tree_path)
+
+    # Check if element exists
+    if node is None:
+        parent = root.find(tree_path.split("/")[-1])
+        node = ET.element(tree_path)
+        parent.append(node)
 
     # Set element value
-    n.text = value
+    node.text = value
 
     # Write changes to file
     tree.write(fp, pretty_print=True)
