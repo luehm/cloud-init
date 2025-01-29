@@ -6,8 +6,6 @@
 
 import lxml.etree as ET
 
-from cloudinit import util
-
 def _element_to_dict(element):
     """
     Recursively converts an ElementTree Element to a Python dictionary.
@@ -123,13 +121,34 @@ def replace_config_element(tree_path, key, value, node, fp="/cf/conf/config.xml"
             old_node = n
             break
     if old_node is None:
-        raise ValueError("No such key: %s" % tree_path)
+        append_config_element(tree_path, node)
 
     # Swap old element with new element
     parent = old_node.getparent()
     parent.remove(old_node)
     parent.append(_dict_to_element(tree_path.split("/")[-1], node))
 
+    # Write changes to file
+    tree.write(fp, pretty_print=True)
+
+def remove_config_element(tree_path, key=None, value=None, fp="/cf/conf/config.xml"):
+    """
+    For the given xml path, remove the element with the specified value
+    """
+
+    # Find existing element in document
+    xml_parser = ET.XMLParser(remove_blank_text=True)
+    tree = ET.parse(fp, xml_parser)
+    root = tree.getroot()
+    nodes = root.findall(tree_path)
+
+    # Remove element from parent node
+    # if no key is specified, remove all elements
+    for n in nodes:
+        if (key is None or value is None) or (key in n and n["key"].text == value):
+            parent = n.getparent()
+            parent.remove(n)
+    
     # Write changes to file
     tree.write(fp, pretty_print=True)
 

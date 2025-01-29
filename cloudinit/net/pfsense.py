@@ -4,135 +4,163 @@
 #
 # This file is part of cloud-init. See LICENSE file for license information.
 
-import bcrypt
 import logging
+import re
+import ipaddress
 
+from cloudinit import net
 import cloudinit.net.bsd
-from cloudinit import distros, net, subp, util
 from cloudinit.distros import pfsense_utils as pf_utils
 
 LOG = logging.getLogger(__name__)
 
-
 class Renderer(cloudinit.net.bsd.BSDRenderer):
-    def create_group(self, name, gid=None):
+
+    static_routes_node = "./staticroutes"
+    gateways_node = "./gateways"
+    interfaces_node = "./interfaces"
+
+    def __init__(self, config=None):
+        super(Renderer, self).__init__()
+
+    def _resolve_conf(self, settings):
         raise NotImplementedError()
+    
+    def _string_escape(self, string):
+        return re.sub('[^a-zA-Z0-9_]+', '_', string).capitalize()
 
-    def add_user_to_group(self, user, group):
-
-        next_gid_node = "./system/nextgid"
+    def rename_interface(self, cur_name, device_name):
         raise NotImplementedError()
-
-    def set_passwd(self, user, passwd, hashed=False):
-        """
-        Set the password for a user
-        """
-
-        # Check if user exists
-        user_node = "./system/user"
-        users = pf_utils.get_config_element(user_node)
-        n = None
-        for u in users:
-            if u["name"] == user:
-                n = u
-                break
-        if n is None:
-            #LOG.error("User %s does not exist", user)
-            return False
-
-        # Set password
-        if hashed:
-            # Check if password is bcrypt format
-            if passwd.startswith("$2a$"):
-                n["bcrypt-hash"] = passwd
-                pf_utils.set_config_value(user_node + "/bcrypt-hash", passwd)
-            else:
-                print("Invalid bcrypt hash: %s", passwd)
-                #LOG.error("Invalid bcrypt hash: %s", passwd)
-        else:
-            # Generate bcrypt hash of user password
-            n["bcrypt-hash"] = bcrypt.hashpw(passwd.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
-        pf_utils.replace_config_element(user_node, "name", user, n)
-
-        return True
-
-    def lock_passwd(self, user):
+    
+    def dhcp_interfaces(self):
         raise NotImplementedError()
-
-    def chpasswd(self, user, passwd):
+    
+    def start_services(self, run=False):
         raise NotImplementedError()
+    
+    def write_config(self):
+        # Clear all old interface config entries
+        config_ifaces = pf_utils.get_config_element(Renderer.interfaces_node)
+        for c_iface in config_ifaces:
+            pf_utils.remove_config_element(c_iface)
 
-    def add_user(self, name, **kwargs):
-        """
-        Add a user to the system
-        Users are stored within the pfsense/system element as a new user entry
+        devices = self.interface_configurations.keys() | self.interface_configurations_ipv6.keys()
 
-        Supported user properties:
-        - gecos: User description
-        - lock_passwd: Lock user password
-        - expiredate: User expiration date
-        - groups: List of groups to add user to
-        - name: User name
+        for device_name in devices:
 
-        Supported in other modules:
-        - groups
-        - ssh_authorized_keys
-        - plain_text_passwd
-        - hashed_passwd
-        - passwd
-        """
+            # Set basic interface properties
+            # NOTE: <if> is the key value in the xml structure
+            # MUST match the hardware interface name
+            # The parent XML tag is set to this value for consistency
+            iface = {device_name: {}}
+            iface["if"] = device_name
+            iface["descr"] = self._string_escape(device_name)
+            iface["enable"] = ""
 
-        user_node = "./system/user"
-        next_uid_node = "./system/nextuid"
+            # Check if we have ipv4 configuration for this interface
+            if device_name in self.interface_configurations:
+                v = self.interface_configurations[device_name]
 
-        # Check if user already exists
-        users = pf_utils.get_config_element(user_node)
-        if [u for u in users if u["name"] == name]:
-            #LOG.info("User %s already exists, skipping.", name)
-            return False
+                if v.get("address"):
+                    if v.get("address") == "DHCP":
+                        iface["ipaddr"] = "dhcp"
+                    else:
+                        iface["ipaddr"] = v.get("address")
 
-        uid = pf_utils.get_config_value(next_uid_node)
+                if v.get("netmask"):
+                    iface["subnet"] = v.get("netmask")
 
-        if name == None or name == "":
-            #LOG.error("User name cannot be empty")
-            return False
+                if v.get("mtu"):
+                    iface["mtu"] = v.get("mtu")
 
-        # Create new user
-        user = {}
-        user["name"] = name
-        user["uid"] = uid
+            # Check if we have ipv6 configuration for this interface
+            if device_name in self.interface_configurations_ipv6:
+                v = self.interface_configurations_ipv6[device_name]
+                    
+                if v.get("address"):
+                    if v.get("address") == "DHCP":
+                        iface["ipaddrv6"] = "dhcp6"
+                    else:
+                        iface["ipaddrv6"] = v.get("address")
 
-        pf_utils.set_config_value(next_uid_node, str(int(uid) + 1))
+                if v.get("prefix"):
+                    iface["subnetv6"] = v.get("prefix")
 
-        supported_user_passwd_formats = {
-            "plain_text_passwd": False,
-            "hashed_passwd": True,
-            "passwd": True
-        }
+                # ipv6 MTU takes precedence over ipv4
+                # - relaistically, only should be on one or the other
+                # - but if both, we'll use the ipv6 mtu
+                if v.get("mtu"):
+                    iface["mtu"] = v.get("mtu")
 
-        for key, val in kwargs.items():
-            if key == "gecos":
-                user["descr"] = val
-            elif key == "lock_passwd":
-                user["disabled"] = None
-            elif key == "expiredate":
-                user["expires"] = val
-            elif key == "groups":
-                for group in val:
-                    self.add_user_to_group(name, group)
-            elif key == "ssh_authorized_keys":
-                for key in val:
-                    self.add_ssh_key(name, key)
-            elif not [k for k in supported_user_passwd_formats.keys() if k == key]:
-                #LOG.warning("Unsupported user property: %s", key)
-                print(f"Unsupported user property: {key}")
+            # Add the interface to the config
+            pf_utils.append_config_element(Renderer.interface_routes, iface)
 
-        # Add user to system element
-        pf_utils.append_config_element(user_node, user)
+        def _create_gateway(self, gateway):
 
-        for key, val in kwargs.items():
-            if [k for k in supported_user_passwd_formats.keys() if k == key]:
-                self.set_passwd(name, val, supported_user_passwd_formats[key])
+            # Check if gateway already exists
+            gateways = pf_utils.get_config_element(Renderer.gateways_node)
+            for g in gateways:
+                if g["gateway"] == gateway:
+                    return g["name"]
 
-        return True
+            # Find interface for gateway
+            c_ifaces = pf_utils.get_config_element(Renderer.interfaces_node)
+            gw_iface_name = None
+            ipprotocol = None
+            for c_iface in c_ifaces:
+                iface_ip = None
+                if c_iface.get("ipaddr"):
+                    iface_ip = c_iface.get("ipaddr")
+                    ipprotocol = "inet"
+                elif c_iface.get("ipaddrv6"):
+                    iface_ip = c_iface.get("ipaddrv6")
+                    ipprotocol = "inet6"
+
+                if ipaddress.ip_address(gateway) in ipaddress.ip_network(iface_ip):
+                    gw_iface_name = c_iface["if"]
+                    break
+                else:
+                    continue
+            if gw_iface_name is None:
+                LOG.warning("No interface found for gateway %s", gateway)
+                return False
+                
+            # Create new gateway
+            gateway = {
+                "gateway_item": {
+                    "name": "GW_" + self._string_escape(gateway),
+                    "gateway": gateway,
+                    "interface": gw_iface_name,
+                    "weight": 1,
+                    "ipprotocol": ipprotocol,
+                    "descr": f"Gateway for {gateway} on {gw_iface_name}",
+                }
+            }
+
+            pf_utils.append_config_element("./gateways", gateway)
+            return gateway["name"]
+
+        def set_route(self, network, netmask, gateway):
+
+            # Check if route exists
+            routes = pf_utils.get_config_element(Renderer.static_routes_node)
+            for r in routes:
+                if r["network"] == f"{network}/{netmask}":
+                    return
+
+            gw_name = self._create_gateway(gateway)
+            if not gw_name:
+                LOG.warning("Failed to create static route %s via %s", f"{network}/{netmask}", gateway)
+                return
+            
+            # Create new route
+            route = {
+                "route": {
+                    "network": f"{network}/{netmask}",
+                    "gateway": gw_name,
+                    "descr": f"Route to {network}/{netmask} via {gateway}",
+                }
+            }
+
+            # Write the route to the config
+            pf_utils.append_config_element(Renderer.static_routes_node, route)
