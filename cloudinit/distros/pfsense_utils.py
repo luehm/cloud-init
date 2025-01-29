@@ -53,14 +53,17 @@ def _dict_to_element(tag, data):
             else:
                 subelement = ET.Element(key)
                 # Handle attributes or text content
-                if value is not None:
-                    subelement.text = value
-                else:
+                if value is None :
                     subelement.text = ""
+                else:
+                    subelement.text = value
                 element.append(subelement)
     else:
         # If the data is a simple value, set it as text
-        element.text = str(data)
+        if data is None:
+            element.text = ""
+        else:
+            element.text = str(data)
 
     return element
 

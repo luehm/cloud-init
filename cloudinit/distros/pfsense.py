@@ -6,6 +6,7 @@
 
 import bcrypt
 import logging
+from datetime import datetime
 
 import cloudinit.distros.freebsd
 from cloudinit import subp, util
@@ -46,7 +47,7 @@ class Distro(cloudinit.distros.freebsd.Distro):
             return False
 
         # Check if name is empty
-        if name == None or name == "":
+        if name in [None, ""]:
             LOG.info("Unable to create group, name cannot be empty")
             return False
 
@@ -56,6 +57,7 @@ class Distro(cloudinit.distros.freebsd.Distro):
         # Create new group
         group = {}
         group["name"] = name
+        group["description"] = name
         group["gid"] = gid
         group["scope"] = "system"
 
@@ -67,15 +69,17 @@ class Distro(cloudinit.distros.freebsd.Distro):
         elif not isinstance(members, list):
             members = [members]
 
+
         # Add group members which currently exist on system
-        group["gid"] = []
+        group["member"] = []
         existing_users = pf_utils.get_config_element(Distro.user_node)
+        existing_names = [u["name"] for u in existing_users]
         for member in members:
-            if not [u for u in existing_users if u["name"] == member]:
+            if member not in existing_names:
                 LOG.warning("Unable to add group member '%s' to group '%s'; user does not exist.", member, name)
                 continue
 
-            group["gid"].append(member["uid"])
+            group["member"].append(existing_users[existing_names.index(member)]["uid"])
 
         # Add group to system element
         pf_utils.append_config_element(Distro.group_node, group)
@@ -96,7 +100,14 @@ class Distro(cloudinit.distros.freebsd.Distro):
         # If group does not exist, return
         if group is None:
             return False
-        
+
+        # If group has no members, create empty list
+        if not "member" in group:
+            group["member"] = []
+
+        if not isinstance(group["member"], list):
+            group["member"] = [group["member"]]
+
         # If user is already in group, return
         if user_id in group["member"]:
             LOG.info("User %s already in group %s", user_id, group_name)
@@ -107,7 +118,7 @@ class Distro(cloudinit.distros.freebsd.Distro):
         pf_utils.replace_config_element(Distro.group_node, "name", group_name, group)
         return True
 
-        
+
     def _add_ssh_key(self, user, key):
         raise NotImplementedError()
 
@@ -115,6 +126,11 @@ class Distro(cloudinit.distros.freebsd.Distro):
         """
         Set the password for a user
         """
+
+        # Check if name is empty
+        if user in [None, ""]:
+            LOG.info("Unable to set password, user name cannot be empty")
+            return False
 
         # Check if user exists
         users = pf_utils.get_config_element(Distro.user_node)
@@ -145,30 +161,69 @@ class Distro(cloudinit.distros.freebsd.Distro):
 
         return True
 
-    def lock_passwd(self, user):
+    def chpasswd(self, plist_in, hashed):
+        name, password = plist_in
+        self.set_passwd(name, password, hashed)
+
+    def lock_passwd(self, name):
         """
         Lock a user's password, effectively disabling the account.
         Implemented on pfSense by the <disabled> element in the user's configuration
         """
 
+        # Check if name is empty
+        if name in [None, ""]:
+            LOG.info("Unable to lock passwd, user name cannot be empty")
+            return False
+
         # Check if user exists
         users = pf_utils.get_config_element(Distro.user_node)
         n = None
         for u in users:
-            if u["name"] == user:
+            if u["name"] == name:
                 n = u
                 break
+
         if n is None:
-            LOG.info("User %s does not exist", user)
+            LOG.info("User %s does not exist", name)
             return False
-        
+
         # Lock user password
-        n["disabled"] = None
-        pf_utils.replace_config_element(Distro.user_node, "name", user, n)
+        n["disabled"] = ""
+        pf_utils.replace_config_element(Distro.user_node, "name", name, n)
         return True
 
-    def chpasswd(self, user, passwd):
-        raise NotImplementedError()
+    def expire_passwd(self, user):
+        self.lock_passwd(user)
+
+    def unlock_passwd(self, name):
+        """
+        Unlock a user's password, effectively enabling the account.
+        Implemented on pfSense by removing the <disabled> element from the user's configuration
+        """
+
+        # Check if name is empty
+        if name in [None, ""]:
+            LOG.info("Unable to unlock passwd, user name cannot be empty")
+            return False
+
+        # Check if user exists
+        users = pf_utils.get_config_element(Distro.user_node)
+        n = None
+        for u in users:
+            if u["name"] == name:
+                n = u
+                break
+
+        if n is None:
+            LOG.info("User %s does not exist", name)
+            return False
+
+        # Unlock user password
+        del n["disabled"]
+        pf_utils.replace_config_element(Distro.user_node, "name", name, n)
+        return True
+
 
     def add_user(self, name, **kwargs):
         """
@@ -189,56 +244,48 @@ class Distro(cloudinit.distros.freebsd.Distro):
 
         """
 
+        # Check if name is empty
+        if name in [None, ""]:
+            LOG.info("Unable to create user, name cannot be empty")
+            return False
+
         # Check if user already exists
         users = pf_utils.get_config_element(Distro.user_node)
         if [u for u in users if u["name"] == name]:
             LOG.info("User %s already exists, skipping.", name)
             return False
 
-        if name == None or name == "":
-            LOG.info("Unable to create user, name cannot be empty")
-            return False
-        
+        # Get next available uid
         uid = pf_utils.get_config_value(Distro.next_uid_node)
 
         # Create new user
         user = {}
         user["name"] = name
         user["uid"] = uid
+        user["scope"] = "user"
 
         # Increment next uid tracker
         pf_utils.set_config_value(Distro.next_uid_node, str(int(uid) + 1))
 
-        supported_user_passwd_formats = {
-            "plain_text_passwd": False,
-            "hashed_passwd": True,
-            "passwd": True
-        }
-
+        # Parse user properties
         for key, val in kwargs.items():
             if key == "gecos":
                 user["descr"] = val
             elif key == "expiredate":
-                user["expires"] = val
-            elif key == "ssh_authorized_keys":
-                for key in val:
-                    self._add_ssh_key(name, key)
+                date_obj= datetime.strptime(val, "%Y-%m-%d")
+                formatted_date = date_obj.strftime("%d/%m/%Y")
+                user["expires"] = formatted_date
 
         # Add user to system element
         pf_utils.append_config_element(Distro.user_node, user)
 
         # Parse remaining user properties
         for key, val in kwargs.items():
-            if [k for k in supported_user_passwd_formats.keys() if k == key]:
-                self.set_passwd(name, val, supported_user_passwd_formats[key])
-            elif key == "groups":
+            if key == "groups":
                 if not isinstance(val, list):
                     val = [val]
                 for group in val:
                     if not self._add_user_to_group(uid, group):
                         LOG.warning("Unable to add user '%s' to group '%s - group does not exist'", name, group)
-
-            elif key == "expired":
-                self.lock_passwd(name)
 
         return True
