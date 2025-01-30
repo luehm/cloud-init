@@ -4,7 +4,11 @@
 #
 # This file is part of cloud-init. See LICENSE file for license information.
 
+import logging
+
 import lxml.etree as ET
+
+LOG = logging.getLogger(__name__)
 
 def _element_to_dict(element):
     """
@@ -74,7 +78,7 @@ def get_config_element(tree_path, fp="/cf/conf/config.xml"):
     xml_parser = ET.XMLParser(remove_blank_text=True)
     tree = ET.parse(fp, xml_parser)
     root = tree.getroot()
-    nodes = root.findall(tree_path)
+    nodes = root.xpath(tree_path)
     if nodes is None:
         return False
 
@@ -91,16 +95,19 @@ def append_config_element(tree_path, element, fp="/cf/conf/config.xml"):
     For the given xml path, create an element with the specified properties.
     """
 
+    parent_path = tree_path.rsplit("/", 1)[0]
+    tag = tree_path.rsplit("/", 1)[1]
+
     # Find parent element in document
     xml_parser = ET.XMLParser(remove_blank_text=True)
     tree = ET.parse(fp, xml_parser)
     root = tree.getroot()
-    n = root.find(tree_path.split("/")[-2])
-    if n is None:
+    parent = root.xpath(parent_path)[0]
+    if parent is None:
         raise ValueError("No such key: %s" % tree_path)
 
     # Append element to parent node
-    n.append(_dict_to_element(tree_path.split("/")[-1], element))
+    parent.append(_dict_to_element(tag, element))
 
     # Write changes to file
     tree.write(fp, pretty_print=True)
@@ -110,23 +117,31 @@ def replace_config_element(tree_path, key, value, node, fp="/cf/conf/config.xml"
     For the given xml path, replace the value of the specified element
     """
 
+    tag = tree_path.rsplit("/", 1)[1]
+
     # Find existing element in document
     xml_parser = ET.XMLParser(remove_blank_text=True)
     tree = ET.parse(fp, xml_parser)
     root = tree.getroot()
-    nodes = root.findall(tree_path)
+    nodes = root.xpath(tree_path)
+    if nodes is None:
+        raise ValueError("No such key: %s" % tree_path)
+
     old_node = None
     for n in nodes:
         if n.find(key).text == value:
             old_node = n
             break
+
+    # If element does not exist, append new element
     if old_node is None:
         append_config_element(tree_path, node)
+        return
 
     # Swap old element with new element
     parent = old_node.getparent()
     parent.remove(old_node)
-    parent.append(_dict_to_element(tree_path.split("/")[-1], node))
+    parent.append(_dict_to_element(tag, node))
 
     # Write changes to file
     tree.write(fp, pretty_print=True)
@@ -140,7 +155,7 @@ def remove_config_element(tree_path, key=None, value=None, fp="/cf/conf/config.x
     xml_parser = ET.XMLParser(remove_blank_text=True)
     tree = ET.parse(fp, xml_parser)
     root = tree.getroot()
-    nodes = root.findall(tree_path)
+    nodes = root.xpath(tree_path)
 
     # Remove element from parent node
     # if no key is specified, remove all elements
@@ -161,7 +176,7 @@ def get_config_value(tree_path, fp="/cf/conf/config.xml"):
     xml_parser = ET.XMLParser(remove_blank_text=True)
     tree = ET.parse(fp, xml_parser)
     root = tree.getroot()
-    node = root.find(tree_path)
+    node = root.xpath(tree_path)[0]
     if node is None:
         return False
 
@@ -172,16 +187,19 @@ def set_config_value(tree_path, value, fp="/cf/conf/config.xml"):
     For the givem xml path, set the value of the specified element
     """
 
+    parent_path = tree_path.rsplit("/", 1)[0]
+    tag = tree_path.rsplit("/", 1)[1]
+
     # Find parent element in document
     xml_parser = ET.XMLParser(remove_blank_text=True)
     tree = ET.parse(fp, xml_parser)
     root = tree.getroot()
-    node = root.find(tree_path)
+    node = root.xpath(tree_path)[0]
 
     # Check if element exists
     if node is None:
-        parent = root.find(tree_path.split("/")[-1])
-        node = ET.element(tree_path)
+        parent = root.xpath(parent_path)[0]
+        node = ET.element(tag)
         parent.append(node)
 
     # Set element value

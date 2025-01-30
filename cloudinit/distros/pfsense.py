@@ -19,10 +19,10 @@ class Distro(cloudinit.distros.freebsd.Distro):
     Distro subclass for pfSense
     """
 
-    user_node = "./system/user"
-    group_node = "./system/group"
-    next_uid_node = "./system/nextuid"
-    next_gid_node = "./system/nextgid"
+    user_node = "/pfsense/system/user"
+    group_node = "/pfsense/system/group"
+    next_uid_node = "/pfsense/system/nextuid"
+    next_gid_node = "/pfsense/system/nextgid"
 
     def _reload_pf(self, cls, rcs=None):
         """

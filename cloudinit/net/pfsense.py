@@ -16,9 +16,9 @@ LOG = logging.getLogger(__name__)
 
 class Renderer(cloudinit.net.bsd.BSDRenderer):
 
-    static_routes_node = "./staticroutes"
-    gateways_node = "./gateways"
-    interfaces_node = "./interfaces"
+    static_routes_node = "/pfsense/staticroutes"
+    gateways_node = "/pfsense/gateways"
+    interfaces_node = "/pfsense/interfaces"
 
     def __init__(self, config=None):
         super(Renderer, self).__init__()
@@ -37,18 +37,20 @@ class Renderer(cloudinit.net.bsd.BSDRenderer):
     
     def write_config(self):
 
-        # Start from empty list of interfaces
-        ifaces = {Renderer.interfaces_node.split('/')[-1]: []}
+        # Remove existing interface configuration
+        c_ifaces = pf_utils.get_config_element(Renderer.interfaces_node) or []
+        for c_iface in c_ifaces:
+            pf_utils.remove_config_element(Renderer.interfaces_node + f"/{c_iface}")
 
+        # Generate list of devices
         devices = self.interface_configurations.keys() | self.interface_configurations_ipv6.keys()
 
         for device_name in devices:
-
             # Set basic interface properties
             # NOTE: <if> is the key value in the xml structure
             # MUST match the hardware interface name
             # The parent XML tag is set to this value for consistency
-            iface = {device_name: {}}
+            iface = {}
             iface["if"] = device_name
             iface["descr"] = self._string_escape(device_name)
             iface["enable"] = ""
@@ -91,56 +93,57 @@ class Renderer(cloudinit.net.bsd.BSDRenderer):
                 elif isinstance(v, str):
                     if v == "DHCP":
                         iface["ipaddrv6"] = "dhcp6"
-            ifaces["interfaces"].append(iface)
-        # Add the interface to the config
-        pf_utils.append_config_element(Renderer.interfaces_node.split('/')[-2], ifaces)
 
-        def _create_gateway(self, gateway):
+            # Add the interface to the config
+            pf_utils.append_config_element(Renderer.interfaces_node + f"/{device_name}", iface)
 
-            # Check if gateway already exists
-            gateways = pf_utils.get_config_element(Renderer.gateways_node)
-            for g in gateways:
-                if g["gateway"] == gateway:
-                    return g["name"]
 
-            # Find interface for gateway
-            c_ifaces = pf_utils.get_config_element(Renderer.interfaces_node)
-            gw_iface_name = None
-            ipprotocol = None
-            for c_iface in c_ifaces:
-                iface_ip = None
-                if c_iface.get("ipaddr"):
-                    iface_ip = c_iface.get("ipaddr")
-                    ipprotocol = "inet"
-                elif c_iface.get("ipaddrv6"):
-                    iface_ip = c_iface.get("ipaddrv6")
-                    ipprotocol = "inet6"
+    def _create_gateway(self, gateway):
 
-                if ipaddress.ip_address(gateway) in ipaddress.ip_network(iface_ip):
-                    gw_iface_name = c_iface["if"]
-                    break
-                else:
-                    continue
-            if gw_iface_name is None:
-                LOG.warning("No interface found for gateway %s", gateway)
-                return False
+        # Check if gateway already exists
+        gateways = pf_utils.get_config_element(Renderer.gateways_node)
+        for g in gateways:
+            if g["gateway"] == gateway:
+                return g["name"]
+
+        # Find interface for gateway
+        c_ifaces = pf_utils.get_config_element(Renderer.interfaces_node)
+        gw_iface_name = None
+        ipprotocol = None
+        for c_iface in c_ifaces:
+            iface_ip = None
+            if c_iface.get("ipaddr"):
+                iface_ip = c_iface.get("ipaddr")
+                ipprotocol = "inet"
+            elif c_iface.get("ipaddrv6"):
+                iface_ip = c_iface.get("ipaddrv6")
+                ipprotocol = "inet6"
+
+            if ipaddress.ip_address(gateway) in ipaddress.ip_network(iface_ip):
+                gw_iface_name = c_iface["if"]
+                break
+            else:
+                continue
+        if gw_iface_name is None:
+            LOG.warning("No interface found for gateway %s", gateway)
+            return False
                 
-            # Create new gateway
-            gateway = {
-                "gateway_item": {
-                    "name": "GW_" + self._string_escape(gateway),
-                    "gateway": gateway,
-                    "interface": gw_iface_name,
-                    "weight": 1,
-                    "ipprotocol": ipprotocol,
-                    "descr": f"Gateway for {gateway} on {gw_iface_name}",
-                }
+        # Create new gateway
+        gateway = {
+            "gateway_item": {
+                "name": "GW_" + self._string_escape(gateway),
+                "gateway": gateway,
+                "interface": gw_iface_name,
+                "weight": 1,
+                "ipprotocol": ipprotocol,
+                "descr": f"Gateway for {gateway} on {gw_iface_name}",
             }
+        }
 
-            pf_utils.append_config_element("./gateways", gateway)
-            return gateway["name"]
+        pf_utils.append_config_element("./gateways", gateway)
+        return gateway["name"]
 
-        def set_route(self, network, netmask, gateway):
+    def set_route(self, network, netmask, gateway):
 
             # Check if route exists
             routes = pf_utils.get_config_element(Renderer.static_routes_node)
