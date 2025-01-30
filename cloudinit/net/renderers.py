@@ -34,6 +34,7 @@ DEFAULT_PRIORITY = [
     "netplan",
     "network-manager",
     "freebsd",
+    "pfsense",
     "netbsd",
     "openbsd",
     "networkd",
