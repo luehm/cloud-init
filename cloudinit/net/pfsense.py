@@ -8,7 +8,7 @@ import logging
 import re
 import ipaddress
 
-from cloudinit import net
+from cloudinit import util
 import cloudinit.net.bsd
 from cloudinit.distros import pfsense_utils as pf_utils
 
@@ -23,9 +23,6 @@ class Renderer(cloudinit.net.bsd.BSDRenderer):
     def __init__(self, config=None):
         super(Renderer, self).__init__()
 
-    def _resolve_conf(self, settings):
-        raise NotImplementedError()
-    
     def _string_escape(self, string):
         return re.sub('[^a-zA-Z0-9_]+', '_', string).capitalize()
 
@@ -36,13 +33,12 @@ class Renderer(cloudinit.net.bsd.BSDRenderer):
         raise NotImplementedError()
     
     def start_services(self, run=False):
-        raise NotImplementedError()
+        pass
     
     def write_config(self):
-        # Clear all old interface config entries
-        config_ifaces = pf_utils.get_config_element(Renderer.interfaces_node)
-        for c_iface in config_ifaces:
-            pf_utils.remove_config_element(c_iface)
+
+        # Start from empty list of interfaces
+        ifaces = {Renderer.interfaces_node.split('/')[-1]: []}
 
         devices = self.interface_configurations.keys() | self.interface_configurations_ipv6.keys()
 
@@ -61,39 +57,43 @@ class Renderer(cloudinit.net.bsd.BSDRenderer):
             if device_name in self.interface_configurations:
                 v = self.interface_configurations[device_name]
 
-                if v.get("address"):
-                    if v.get("address") == "DHCP":
-                        iface["ipaddr"] = "dhcp"
-                    else:
+                if isinstance(v, dict):
+                    if v.get("address"):
                         iface["ipaddr"] = v.get("address")
 
-                if v.get("netmask"):
-                    iface["subnet"] = v.get("netmask")
+                    if v.get("netmask"):
+                        iface["subnet"] = v.get("netmask")
 
-                if v.get("mtu"):
-                    iface["mtu"] = v.get("mtu")
+                    if v.get("mtu"):
+                        iface["mtu"] = v.get("mtu")
+                elif isinstance(v, str):
+                    if v == "DHCP":
+                        iface["ipaddr"] = "dhcp"
 
             # Check if we have ipv6 configuration for this interface
             if device_name in self.interface_configurations_ipv6:
                 v = self.interface_configurations_ipv6[device_name]
-                    
-                if v.get("address"):
-                    if v.get("address") == "DHCP":
-                        iface["ipaddrv6"] = "dhcp6"
-                    else:
+
+                if isinstance(v, dict):
+
+                    if v.get("address"):
                         iface["ipaddrv6"] = v.get("address")
 
-                if v.get("prefix"):
-                    iface["subnetv6"] = v.get("prefix")
+                    if v.get("prefix"):
+                        iface["subnetv6"] = v.get("prefix")
 
-                # ipv6 MTU takes precedence over ipv4
-                # - relaistically, only should be on one or the other
-                # - but if both, we'll use the ipv6 mtu
-                if v.get("mtu"):
-                    iface["mtu"] = v.get("mtu")
+                    # ipv6 MTU takes precedence over ipv4
+                    # - relaistically, only should be on one or the other
+                    # - but if both, we'll use the ipv6 mtu
+                    if v.get("mtu"):
+                        iface["mtu"] = v.get("mtu")
 
-            # Add the interface to the config
-            pf_utils.append_config_element(Renderer.interface_routes, iface)
+                elif isinstance(v, str):
+                    if v == "DHCP":
+                        iface["ipaddrv6"] = "dhcp6"
+            ifaces["interfaces"].append(iface)
+        # Add the interface to the config
+        pf_utils.append_config_element(Renderer.interfaces_node.split('/')[-2], ifaces)
 
         def _create_gateway(self, gateway):
 
@@ -164,3 +164,6 @@ class Renderer(cloudinit.net.bsd.BSDRenderer):
 
             # Write the route to the config
             pf_utils.append_config_element(Renderer.static_routes_node, route)
+
+def available(target=None):
+    return util.is_PFSense()
