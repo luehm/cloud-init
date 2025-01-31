@@ -8,6 +8,8 @@ import logging
 
 import lxml.etree as ET
 
+from cloudinit import subp
+
 LOG = logging.getLogger(__name__)
 
 def _element_to_dict(element):
@@ -205,3 +207,11 @@ def set_config_value(tree_path, value, fp="/cf/conf/config.xml"):
 
     # Write changes to file
     tree.write(fp, pretty_print=True)
+
+def config_reload():
+    """
+    Reload the configuration file
+    """
+
+    # Reload the configuration
+    subp.subp(["/etc/rc.reload_all"], capture=True, rcs=[0])

@@ -23,6 +23,8 @@ class Distro(cloudinit.distros.freebsd.Distro):
     group_node = "/pfsense/system/group"
     next_uid_node = "/pfsense/system/nextuid"
     next_gid_node = "/pfsense/system/nextgid"
+    hostname_node = "/pfsense/system/hostname"
+    domain_node = "/pfsense/system/domain"
 
     def __init__(self, name, cfg, paths):
         super().__init__(name, cfg, paths)
@@ -125,6 +127,27 @@ class Distro(cloudinit.distros.freebsd.Distro):
 
     def _add_ssh_key(self, user, key):
         raise NotImplementedError()
+
+    def _write_hostname(self, hostname, filename=None):
+
+        # if hostname is a fqdn, split it
+        if "." in hostname:
+            hostname, fqdn = hostname.split(".", 1)
+            # Set domain  `
+            pf_utils.set_config_value(Distro.domain_node, fqdn)
+        
+        # Set hostname
+        pf_utils.set_config_value(Distro.hostname_node, hostname)
+
+    def _apply_hostname(self, hostname):
+        pf_utils.config_reload()
+
+    def _read_hostname(self, filename, default=None):
+        # FQDN is split accross hostname and domain elements
+        # in the config.xml
+        # Only return hostname for comparision
+
+        return pf_utils.get_config_values(Distro.hostname_node)[0]
 
     def set_passwd(self, user, passwd, hashed=False):
         """
