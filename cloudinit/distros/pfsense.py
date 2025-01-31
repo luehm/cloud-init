@@ -24,6 +24,14 @@ class Distro(cloudinit.distros.freebsd.Distro):
     next_uid_node = "/pfsense/system/nextuid"
     next_gid_node = "/pfsense/system/nextgid"
 
+    def __init__(self, name, cfg, paths):
+        super().__init__(name, cfg, paths)
+        self.renderer_configs = {
+            "pfsense": {
+                "postcmds": "True"
+            }
+        }
+
     def _reload_pf(self, cls, rcs=None):
         """
         Tell pf to reload its configuration
@@ -48,7 +56,8 @@ class Distro(cloudinit.distros.freebsd.Distro):
             return False
 
         # Get next available gid
-        gid = pf_utils.get_config_value(Distro.next_gid_node)
+        # - Take the first element, there should only be one
+        gid = pf_utils.get_config_values(Distro.next_gid_node)[0]
 
         # Create new group
         group = {}
@@ -150,7 +159,7 @@ class Distro(cloudinit.distros.freebsd.Distro):
                 return False
         else:
             # Generate bcrypt hash of user password
-            node["bcrypt-hash"] = bcrypt.hashpw(passwd.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+            node["bcrypt-hash"] = bcrypt.hashpw(str(passwd).encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
             pf_utils.replace_config_element(Distro.user_node, "name", user, node)
 
@@ -251,7 +260,8 @@ class Distro(cloudinit.distros.freebsd.Distro):
             return False
 
         # Get next available uid
-        uid = pf_utils.get_config_value(Distro.next_uid_node)
+        # - Take the first element, there should only be one
+        uid = pf_utils.get_config_values(Distro.next_uid_node)[0]
 
         # Create new user
         user = {}

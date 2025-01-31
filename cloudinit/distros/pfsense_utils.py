@@ -162,7 +162,7 @@ def remove_config_element(tree_path, key=None, value=None, fp="/cf/conf/config.x
     # Write changes to file
     tree.write(fp, pretty_print=True)
 
-def get_config_value(tree_path, fp="/cf/conf/config.xml"):
+def get_config_values(tree_path, fp="/cf/conf/config.xml"):
     """
     For the given xml path in key, get the value
     """
@@ -171,15 +171,16 @@ def get_config_value(tree_path, fp="/cf/conf/config.xml"):
     xml_parser = ET.XMLParser(remove_blank_text=True)
     tree = ET.parse(fp, xml_parser)
     root = tree.getroot()
-    node = root.xpath(tree_path)[0]
+    node = root.xpath(tree_path)
     if node is None:
         return False
 
-    return node.text
+    return [node.text for node in node]
 
 def set_config_value(tree_path, value, fp="/cf/conf/config.xml"):
     """
-    For the givem xml path, set the value of the specified element
+    For the givem xml path, set the value of the specified element.
+    Only acts upon the first element found.
     """
 
     parent_path = tree_path.rsplit("/", 1)[0]
@@ -189,13 +190,15 @@ def set_config_value(tree_path, value, fp="/cf/conf/config.xml"):
     xml_parser = ET.XMLParser(remove_blank_text=True)
     tree = ET.parse(fp, xml_parser)
     root = tree.getroot()
-    node = root.xpath(tree_path)[0]
+    node = root.xpath(tree_path)
 
     # Check if element exists
-    if node is None:
+    if node is None or len(node) == 0:
         parent = root.xpath(parent_path)[0]
         node = ET.element(tag)
         parent.append(node)
+    else:
+        node = node[0]
 
     # Set element value
     node.text = value

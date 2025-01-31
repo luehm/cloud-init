@@ -7,9 +7,10 @@
 import logging
 import re
 import ipaddress
+import shlex
 
-from cloudinit import util
 import cloudinit.net.bsd
+from cloudinit import util, subp
 from cloudinit.distros import pfsense_utils as pf_utils
 
 LOG = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ class Renderer(cloudinit.net.bsd.BSDRenderer):
     static_routes_node = "/pfsense/staticroutes/route"
     gateways_node = "/pfsense/gateways/gateway_item"
     interfaces_node = "/pfsense/interfaces"
+    earlyshellcmd_node = "/pfsense/system/earlyshellcmd"
 
     def __init__(self, config=None):
         super(Renderer, self).__init__()
@@ -187,13 +189,33 @@ class Renderer(cloudinit.net.bsd.BSDRenderer):
         self.interface_routes.append((network, netmask, gateway))
 
     def rename_interface(self, cur_name, device_name):
-        raise NotImplementedError()
+
+        # Generate interface rename commnad
+        rename_cmd = f"ifconfig {cur_name} name {device_name}"
+
+        # Perform rename to allow immediate effect
+        subp.subp(shlex.split(rename_cmd), capture=True, rcs=[0])
+
+        # Check if rename command already exists in  an <earlyshellcmd>
+        earlyshellcmds = pf_utils.get_config_values(Renderer.earlyshellcmd_node)
+        for cmd in earlyshellcmds:
+            if cmd == rename_cmd:
+                return
+        
+        # Add rename command to earlyshellcmds
+        pf_utils.append_config_element(Renderer.earlyshellcmd_node, rename_cmd)
+
     
     def dhcp_interfaces(self):
         raise NotImplementedError()
     
     def start_services(self, run=False):
-        pass
+        if not run:
+            LOG.debug("pfsense generate postcmd disabled")
+            return
+        
+        # Reload pfSense config
+        subp.subp(["/etc/rc.reload_all"], capture=True, rcs=[0])
     
     def write_config(self):
         self._write_iface_config()
