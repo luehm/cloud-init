@@ -21,6 +21,7 @@ class Renderer(cloudinit.net.bsd.BSDRenderer):
     gateways_node = "/pfsense/gateways/gateway_item"
     interfaces_node = "/pfsense/interfaces"
     earlyshellcmd_node = "/pfsense/system/earlyshellcmd"
+    upstream_dns_node = "/pfsense/system/dnsserver"
 
     def __init__(self, config=None):
         super(Renderer, self).__init__()
@@ -35,6 +36,23 @@ class Renderer(cloudinit.net.bsd.BSDRenderer):
         # This function returns a list of all interface elements.
         c_ifaces = pf_utils.get_config_elements(Renderer.interfaces_node)
         return [c_ifaces[0][c_iface] for c_iface in c_ifaces[0]]
+
+    def _resolve_conf(self, settings):
+        # Get current upstream DNS servers
+        # NOTE: pfSense default configuration uses the local resolver
+        # before attempting remote DNS servers
+        upstream_dns = pf_utils.get_config_values(Renderer.upstream_dns_node)
+
+        # Discover nameservers from interface configuration
+        nameservers = settings.dns_nameservers
+        for iface in settings.iter_interfaces():
+            for subnet in iface.get("subnets", []):
+                nameservers.extend(subnet.get("dns_nameservers", []))
+
+        # Add nameservers to config if not already present 
+        for ns in nameservers:
+            if ns not in upstream_dns:
+                pf_utils.append_config_element(Renderer.upstream_dns_node, ns)
 
     def _write_iface_config(self):
         # Remove existing interface configuration
@@ -205,7 +223,6 @@ class Renderer(cloudinit.net.bsd.BSDRenderer):
         # Add rename command to earlyshellcmds
         pf_utils.append_config_element(Renderer.earlyshellcmd_node, rename_cmd)
 
-    
     def dhcp_interfaces(self):
         raise NotImplementedError()
     
@@ -215,7 +232,7 @@ class Renderer(cloudinit.net.bsd.BSDRenderer):
             return
         
         # Reload pfSense config
-        subp.subp(["/etc/rc.reload_all"], capture=True, rcs=[0])
+        pf_utils.config_reload()
     
     def write_config(self):
         self._write_iface_config()
