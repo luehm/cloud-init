@@ -42,7 +42,7 @@ class Distro(cloudinit.distros.freebsd.Distro):
             return False
 
         # Check if group already exists
-        groups = pf_utils.get_config_element(Distro.group_node)
+        groups = pf_utils.get_config_elements(Distro.group_node)
         if [g for g in groups if g["name"] == name]:
             LOG.info("Group %s already exists, skipping.", name)
             return False
@@ -68,7 +68,7 @@ class Distro(cloudinit.distros.freebsd.Distro):
 
         # Add group members which currently exist on system
         group["member"] = []
-        existing_users = pf_utils.get_config_element(Distro.user_node)
+        existing_users = pf_utils.get_config_elements(Distro.user_node)
         existing_names = [u["name"] for u in existing_users]
         for member in members:
             if member not in existing_names:
@@ -86,7 +86,7 @@ class Distro(cloudinit.distros.freebsd.Distro):
         """
 
         # Check if group exists
-        groups = pf_utils.get_config_element(Distro.group_node)
+        groups = pf_utils.get_config_elements(Distro.group_node)
         group = None
         for g in groups:
             if g["name"] == group_name:
@@ -129,7 +129,7 @@ class Distro(cloudinit.distros.freebsd.Distro):
             return False
 
         # Check if user exists
-        users = pf_utils.get_config_element(Distro.user_node)
+        users = pf_utils.get_config_elements(Distro.user_node)
         node = None
         for u in users:
             if u["name"] == user:
@@ -172,7 +172,7 @@ class Distro(cloudinit.distros.freebsd.Distro):
             return False
 
         # Check if user exists
-        users = pf_utils.get_config_element(Distro.user_node)
+        users = pf_utils.get_config_elements(Distro.user_node)
         node = None
         for u in users:
             if u["name"] == name:
@@ -203,7 +203,7 @@ class Distro(cloudinit.distros.freebsd.Distro):
             return False
 
         # Check if user exists
-        users = pf_utils.get_config_element(Distro.user_node)
+        users = pf_utils.get_config_elements(Distro.user_node)
         node = None
         for u in users:
             if u["name"] == name:
@@ -245,7 +245,7 @@ class Distro(cloudinit.distros.freebsd.Distro):
             return False
 
         # Check if user already exists
-        users = pf_utils.get_config_element(Distro.user_node)
+        users = pf_utils.get_config_elements(Distro.user_node)
         if [u for u in users if u["name"] == name]:
             LOG.info("User %s already exists, skipping.", name)
             return False
