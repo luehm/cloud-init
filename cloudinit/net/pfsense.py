@@ -56,9 +56,10 @@ class Renderer(cloudinit.net.bsd.BSDRenderer):
 
     def _write_iface_config(self):
         # Remove existing interface configuration
-        c_ifaces = self._get_config_ifaces()
-        for c_iface in c_ifaces:
-            pf_utils.remove_config_element(Renderer.interfaces_node + f"/{c_iface.get('if')}")
+        # Can't iterate through straight-up interfaces list
+        # because <if> name might not necessarily match the node name
+        pf_utils.remove_config_element(Renderer.interfaces_node, None, None)
+        pf_utils.append_config_element(Renderer.interfaces_node, "")
 
         # Generate list of devices
         devices = (self.interface_configurations.keys() | self.interface_configurations_ipv6.keys()) or []
@@ -138,6 +139,9 @@ class Renderer(cloudinit.net.bsd.BSDRenderer):
                 iface_ip = c_iface.get("ipaddrv6")
                 iface_mask = c_iface.get("subnetv6")
                 ipprotocol = "inet6"
+
+            if iface_ip is None or iface_mask is None or iface_ip in ["dhcp", "dhcp6"]:
+                continue
 
             if ipaddress.ip_address(gateway) in ipaddress.ip_network(f"{iface_ip}/{iface_mask}", strict=False):
                 gw_iface_name = c_iface["if"]
