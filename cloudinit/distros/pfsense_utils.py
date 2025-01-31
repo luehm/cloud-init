@@ -69,7 +69,7 @@ def _dict_to_element(tag, data):
 
     return element
 
-def get_config_element(tree_path, fp="/cf/conf/config.xml"):
+def get_config_elements(tree_path, fp="/cf/conf/config.xml"):
     """
     For the given xml path in key, get the element
     """
@@ -82,13 +82,8 @@ def get_config_element(tree_path, fp="/cf/conf/config.xml"):
     if nodes is None:
         return False
 
-    # Convert nodes to dictionaries
-    if len(nodes) == 1:
-        # Return a single dictionary if only one element matches
-        return _element_to_dict(nodes[0])
-    else:
-        # Return a list of dictionaries if multiple elements match
-        return [_element_to_dict(node) for node in nodes]
+    # Return a list of dictionaries if multiple elements match
+    return [_element_to_dict(node) for node in nodes] or []
 
 def append_config_element(tree_path, element, fp="/cf/conf/config.xml"):
     """
