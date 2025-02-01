@@ -40,6 +40,19 @@ class Distro(cloudinit.distros.freebsd.Distro):
         """
         return subp.subp(["/etc/rc.reload_all"], capture=True, rcs=rcs)
 
+    def _sync_users_groups(self):
+        """
+        Generate the accounts configuration
+        """
+
+        php_command = """
+        require_once('/etc/inc/auth.inc');
+        local_reset_accounts();
+        """
+
+        return subp.subp(["php", "-r", php_command], capture=True)
+
+
     def create_group(self, name, members=None):
         """
         Create a new group
@@ -91,6 +104,9 @@ class Distro(cloudinit.distros.freebsd.Distro):
         # Add group to system element
         pf_utils.append_config_element(Distro.group_node, group)
 
+        # Write users and groups from config to system
+        self._sync_users_groups()
+
     def _add_user_to_group(self, user_id, group_name):
         """
         Add a user to a group
@@ -125,7 +141,12 @@ class Distro(cloudinit.distros.freebsd.Distro):
         pf_utils.replace_config_element(Distro.group_node, "name", group_name, group)
         return True
 
+        # Write users and groups from config to system
+        self._sync_users_groups()
+
     def _add_ssh_key(self, user, key):
+        # Write users and groups from config to system
+        self._sync_users_groups()
         raise NotImplementedError()
 
     def _write_hostname(self, hostname, filename=None):
@@ -135,7 +156,7 @@ class Distro(cloudinit.distros.freebsd.Distro):
             hostname, fqdn = hostname.split(".", 1)
             # Set domain  `
             pf_utils.set_config_value(Distro.domain_node, fqdn)
-        
+
         # Set hostname
         pf_utils.set_config_value(Distro.hostname_node, hostname)
 
@@ -186,6 +207,8 @@ class Distro(cloudinit.distros.freebsd.Distro):
 
             pf_utils.replace_config_element(Distro.user_node, "name", user, node)
 
+        # Write users and groups from config to system
+        self._sync_users_groups()
         return True
 
     def chpasswd(self, plist_in, hashed):
@@ -218,6 +241,9 @@ class Distro(cloudinit.distros.freebsd.Distro):
         # Lock user password
         node["disabled"] = ""
         pf_utils.replace_config_element(Distro.user_node, "name", name, node)
+
+        # Write users and groups from config to system
+        self._sync_users_groups()
         return True
 
     def expire_passwd(self, user):
@@ -249,6 +275,9 @@ class Distro(cloudinit.distros.freebsd.Distro):
         # Unlock user password
         del node["disabled"]
         pf_utils.replace_config_element(Distro.user_node, "name", name, node)
+
+        # Write users and groups from config to system
+        self._sync_users_groups()
         return True
 
     def add_user(self, name, **kwargs):
@@ -321,4 +350,6 @@ class Distro(cloudinit.distros.freebsd.Distro):
                 # Distro class - handling here
                 self.set_passwd(name, val, hashed=True)
 
+        # Write users and groups from config to system
+        self._sync_users_groups()
         return True
