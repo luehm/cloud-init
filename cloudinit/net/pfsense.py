@@ -49,10 +49,13 @@ class Renderer(cloudinit.net.bsd.BSDRenderer):
             for subnet in iface.get("subnets", []):
                 nameservers.extend(subnet.get("dns_nameservers", []))
 
-        # Add nameservers to config if not already present 
+        # Add nameservers to config if not already present
         for ns in nameservers:
             if ns not in upstream_dns:
                 pf_utils.append_config_element(Renderer.upstream_dns_node, ns)
+
+        # Apply resolvconf
+        pf_utils.sync_resolvconf()
 
     def _write_iface_config(self):
         # Remove existing interface configuration
@@ -151,7 +154,7 @@ class Renderer(cloudinit.net.bsd.BSDRenderer):
         if gw_iface_name is None:
             LOG.warning("No interface found for gateway %s", gateway)
             return False
-                
+
         # Create new gateway
         gateway = {
             "name": "GW_" + self._string_escape(gateway),
@@ -174,7 +177,7 @@ class Renderer(cloudinit.net.bsd.BSDRenderer):
                 if r["network"] == f"{network}/{netmask}":
                     route_exists = True
                     break
-            
+
             # Skip itteration if route exists
             if route_exists:
                 LOG.info("Route %s already exists - skipping", f"{network}/{netmask}")
@@ -223,21 +226,21 @@ class Renderer(cloudinit.net.bsd.BSDRenderer):
         for cmd in earlyshellcmds:
             if cmd == rename_cmd:
                 return
-        
+
         # Add rename command to earlyshellcmds
         pf_utils.append_config_element(Renderer.earlyshellcmd_node, rename_cmd)
 
     def dhcp_interfaces(self):
         raise NotImplementedError()
-    
+
     def start_services(self, run=False):
         if not run:
             LOG.debug("pfsense generate postcmd disabled")
             return
-        
+
         # Reload pfSense config
-        pf_utils.config_reload()
-    
+        pf_utils.reload_config()
+
     def write_config(self):
         self._write_iface_config()
         self._write_route_config()

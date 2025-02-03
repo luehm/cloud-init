@@ -12,6 +12,9 @@ from cloudinit import subp
 
 LOG = logging.getLogger(__name__)
 
+
+
+
 def _element_to_dict(element):
     """
     Recursively converts an ElementTree Element to a Python dictionary.
@@ -208,10 +211,65 @@ def set_config_value(tree_path, value, fp="/cf/conf/config.xml"):
     # Write changes to file
     tree.write(fp, pretty_print=True)
 
-def config_reload():
+def reload_config():
     """
-    Reload the configuration file
+    Tell pf to reload its configuration
+    """
+    return subp.subp(["/etc/rc.reload_all"], capture=True, rcs=[0])
+
+def sync_users_groups():
+    """
+    Generate system accounts from pfSense config
     """
 
-    # Reload the configuration
-    subp.subp(["/etc/rc.reload_all"], capture=True, rcs=[0])
+    php_command = """
+    require_once('/etc/inc/globals.inc');
+    require_once('/etc/inc/config.inc');
+    require_once('/etc/inc/auth.inc');
+    config_read_file();
+    local_reset_accounts();
+    """
+
+    return subp.subp(["php", "-r", php_command], capture=True)
+
+def sync_hostname():
+    """
+    Set hostname based on pfSense config
+    """
+
+    php_command = """
+    require_once('/etc/inc/globals.inc');
+    require_once('/etc/inc/config.inc');
+    config_read_file();
+    system_hostname_configure();
+    """
+
+    return subp.subp(["php", "-r", php_command], capture=True)
+
+def sync_hosts():
+    """
+    Set hostname based on pfSense config
+    """
+
+    php_command = """
+    require_once('/etc/inc/globals.inc');
+    require_once('/etc/inc/config.inc');
+    config_read_file();
+    system_hosts_generate();
+    """
+
+    return subp.subp(["php", "-r", php_command], capture=True)
+
+def sync_resolvconf():
+    """
+    Generate resolvconf based on pfSense config
+    """
+
+    php_command = """
+    require_once('/etc/inc/globals.inc');
+    require_once('/etc/inc/config.inc');
+    config_read_file();
+    system_resolvconf_generate();
+    """
+
+    return subp.subp(["php", "-r", php_command], capture=True)
