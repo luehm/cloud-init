@@ -12,9 +12,6 @@ from cloudinit import subp
 
 LOG = logging.getLogger(__name__)
 
-
-
-
 def _element_to_dict(element):
     """
     Recursively converts an ElementTree Element to a Python dictionary.
@@ -163,7 +160,7 @@ def remove_config_element(tree_path, key=None, value=None, fp="/cf/conf/config.x
         if (key is None or value is None) or (key in n and n["key"].text == value):
             parent = n.getparent()
             parent.remove(n)
-    
+
     # Write changes to file
     tree.write(fp, pretty_print=True)
 
@@ -226,7 +223,8 @@ def sync_users_groups():
     require_once('/etc/inc/globals.inc');
     require_once('/etc/inc/config.inc');
     require_once('/etc/inc/auth.inc');
-    config_read_file();
+    global $config;
+    $config = parse_config(true);
     local_reset_accounts();
     """
 
@@ -240,7 +238,8 @@ def sync_hostname():
     php_command = """
     require_once('/etc/inc/globals.inc');
     require_once('/etc/inc/config.inc');
-    config_read_file();
+    global $config;
+    $config = parse_config(true);
     system_hostname_configure();
     """
 
@@ -254,7 +253,8 @@ def sync_hosts():
     php_command = """
     require_once('/etc/inc/globals.inc');
     require_once('/etc/inc/config.inc');
-    config_read_file();
+    global $config;
+    $config = parse_config(true);
     system_hosts_generate();
     """
 
@@ -268,7 +268,8 @@ def sync_resolvconf():
     php_command = """
     require_once('/etc/inc/globals.inc');
     require_once('/etc/inc/config.inc');
-    config_read_file();
+    global $config;
+    $config = parse_config(true);
     system_resolvconf_generate();
     """
 
