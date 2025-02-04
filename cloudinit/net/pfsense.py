@@ -28,7 +28,7 @@ class Renderer(cloudinit.net.bsd.BSDRenderer):
         self.interface_routes = []
 
     def _string_escape(self, string):
-        return re.sub('[^a-zA-Z0-9_]+', '_', string).capitalize()
+        return re.sub('[^a-zA-Z0-9_]+', '_', string).upper()
 
     def _get_config_ifaces(self):
         # pfSense stores interfaces within a top-level <interfaces> element
