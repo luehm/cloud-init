@@ -244,16 +244,16 @@ class Distro(cloudinit.distros.freebsd.Distro):
             LOG.info("Unable to unlock passwd, user name cannot be empty")
             return False
 
-        # Check if user exists
+        # Check if user exists and is locked
         users = pf_utils.get_config_elements(Distro.user_node)
         node = None
         for u in users:
-            if u["name"] == name:
+            if u["name"] == name and u.get("disabled"):
                 node = u
                 break
 
         if node is None:
-            LOG.info("User %s does not exist", name)
+            LOG.info("User %s does not exist or is not locked.", name)
             return False
 
         # Unlock user password
