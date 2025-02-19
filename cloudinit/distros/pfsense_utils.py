@@ -212,7 +212,15 @@ def reload_config():
     """
     Tell pf to reload its configuration
     """
-    return subp.subp(["/etc/rc.reload_all"], capture=True, rcs=[0])
+
+    # Force-stop SSH to prevent race condition when it's restarted
+    # by rc.reload_all
+    reload_command = """
+    pfSsh.php playback svc stop sshd
+    sleep 5
+    /etc/rc.reload_all
+    """
+    return subp.subp(["bash", "-s", reload_command], capture=True, rcs=[0])
 
 def sync_users_groups():
     """
