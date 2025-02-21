@@ -216,8 +216,8 @@ def reload_config():
     # Force-stop SSH to prevent race condition when it's restarted
     # by rc.reload_all
     reload_command = """
-    pfSsh.php playback svc stop sshd
-    sleep 5
+    pfSsh.php playback svc stop sshd &&
+    sleep 5 &&
     /etc/rc.reload_all
     """
     return subp.subp(["bash", "-s", reload_command], capture=True, rcs=[0])
