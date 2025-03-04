@@ -18,19 +18,20 @@ jobs:
           path: repo
 
       - name: Extract variables
+        id: env-context
         run: |
-          echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-          echo "REPO_NAME=$(basename $GITHUB_REPOSITORY)" >> $GITHUB_ENV
+          echo "release-version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          echo "repo-name=$(basename $GITHUB_REPOSITORY)" >> $GITHUB_OUTPUT
 
       - name: Create tar.gz archive
         run: |
           echo "current dir: $(pwd)"
           echo "current contents: $(ls -lah)"
           echo "repo contents: $(ls -lah repo)"
-          tar --exclude='**/.git' -cvzf ${{ env.REPO_NAME }}-${{ env.VERSION }}.tar.gz repo/${{ env.REPO_NAME }}
+          tar -C ./repo --exclude='**/.git' -cvzf ${{ steps.env-context.outputs.repo-name }}-${{ steps.env-context.outputs.release-version }}.tar.gz ./${{ steps.env-context.outputs.repo-name }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.REPO_NAME }}-${{ env.VERSION }}
-          path: /home/runner/work/${{ env.REPO_NAME }}/${{ env.REPO_NAME }}-${{ env.VERSION }}.tar.gz
+          name: ${{ steps.env-context.outputs.repo-name }}-${{ steps.env-context.outputs.release-version }}
+          path: ./${{ steps.env-context.outputs.repo-name }}-${{ steps.env-context.outputs.release-version }}.tar.gz
