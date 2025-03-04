@@ -1,0 +1,35 @@
+name: Create and upload release on Tag
+
+on:
+  push:
+    tags:
+      - "*"  # Runs for any tag
+
+permissions:
+    contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract variables
+        run: |
+          echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          echo "REPO_NAME=$(basename $GITHUB_REPOSITORY)" >> $GITHUB_ENV
+
+
+      - name: Create tar.gz archive
+        run: |
+          mkdir -p artifact
+          tar --exclude='${{ env.REPO_NAME }}/.git' -cvzf ${{ env.REPO_NAME }}-${{ env.VERSION }}.tar.gz ${{ env.REPO_NAME }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.REPO_NAME }}-${{ env.VERSION }}
+          path: /home/runner/work/${{ env.REPO_NAME }}/${{ env.REPO_NAME }}-${{ env.VERSION }}.tar.gz
