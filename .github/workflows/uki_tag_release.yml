@@ -31,7 +31,7 @@ jobs:
       - name: Compress And Push Artifacts
         env:
           ARTIFACT_REPO: "${{ env.REGISTRY }}/${{ github.repository }}/${{ env.ARTIFACT_PREFIX }}"
-          ARTIFACT_VERSION: ${GITHUB_REF#refs/tags/}
+          ARTIFACT_VERSION: ${{ github.ref_name }}
         run: |
           tar  --exclude='**/.git' -cvzf ${{ github.event.repository.name }}-${ARTIFACT_VERSION}.tar.gz ${{ github.event.repository.name }}
           EXTRA_TAGS=""
