@@ -15,18 +15,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          path: repo
 
       - name: Extract variables
         run: |
           echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
           echo "REPO_NAME=$(basename $GITHUB_REPOSITORY)" >> $GITHUB_ENV
 
-
       - name: Create tar.gz archive
         run: |
-          mkdir -p artifact
-          tar --exclude='${{ env.REPO_NAME }}/.git' -cvzf ${{ env.REPO_NAME }}-${{ env.VERSION }}.tar.gz ${{ env.REPO_NAME }}
+          echo "current dir: $(pwd)"
+          echo "current contents: $(ls -lah)"
+          echo "repo contents: $(ls -lah repo)"
+          tar --exclude='**/.git' -cvzf ${{ env.REPO_NAME }}-${{ env.VERSION }}.tar.gz repo/${{ env.REPO_NAME }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
