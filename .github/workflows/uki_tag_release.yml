@@ -12,16 +12,18 @@ jobs:
   package:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          path: repo
-
       - name: Extract variables
         id: env-context
         run: |
+          echo "release-version=${GITHUB_REF#refs/tags/}"
           echo "release-version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          echo "repo-name=$(basename $GITHUB_REPOSITORY)"
           echo "repo-name=$(basename $GITHUB_REPOSITORY)" >> $GITHUB_OUTPUT
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: ${{ steps.env-context.outputs.repo-name }}
 
       - name: Create tar.gz archive
         run: |
