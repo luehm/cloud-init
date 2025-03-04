@@ -27,13 +27,10 @@ jobs:
 
       - name: Create tar.gz archive
         run: |
-          echo "current dir: $(pwd)"
-          echo "current contents: $(ls -lah)"
-          echo "repo contents: $(ls -lah repo)"
-          tar -C ./repo --exclude='**/.git' -cvzf ${{ steps.env-context.outputs.repo-name }}-${{ steps.env-context.outputs.release-version }}.tar.gz ./${{ steps.env-context.outputs.repo-name }}
+          tar  --exclude='**/.git' -cvzf ${{ steps.env-context.outputs.repo-name }}-${{ steps.env-context.outputs.release-version }}.tar.gz ${{ steps.env-context.outputs.repo-name }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.env-context.outputs.repo-name }}-${{ steps.env-context.outputs.release-version }}
-          path: ./${{ steps.env-context.outputs.repo-name }}-${{ steps.env-context.outputs.release-version }}.tar.gz
+          path: ${{ steps.env-context.outputs.repo-name }}-${{ steps.env-context.outputs.release-version }}.tar.gz
