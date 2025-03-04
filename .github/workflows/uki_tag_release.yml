@@ -5,32 +5,53 @@ on:
     tags:
       - "*"  # Runs for any tag
 
-permissions:
-    contents: read
+env:
+  REGISTRY: ghcr.io
+  ARTIFACT_PREFIX: cloud-init
 
 jobs:
   package:
     runs-on: ubuntu-latest
     steps:
-      - name: Extract variables
-        id: env-context
-        run: |
-          echo "release-version=${GITHUB_REF#refs/tags/}"
-          echo "release-version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          echo "repo-name=$(basename $GITHUB_REPOSITORY)"
-          echo "repo-name=$(basename $GITHUB_REPOSITORY)" >> $GITHUB_OUTPUT
-
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          path: ${{ steps.env-context.outputs.repo-name }}
+          path: ${{ github.event.repository.name }}
 
-      - name: Create tar.gz archive
+      - name: Install ORAS
+        uses: oras-project/setup-oras@v1
+
+      - name: Authenticate ORAS
+        env:
+          USERNAME: ${{ github.actor }}
+          PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tar  --exclude='**/.git' -cvzf ${{ steps.env-context.outputs.repo-name }}-${{ steps.env-context.outputs.release-version }}.tar.gz ${{ steps.env-context.outputs.repo-name }}
+          echo $PASSWORD | oras login -u $USERNAME --password-stdin $REGISTRY
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.env-context.outputs.repo-name }}-${{ steps.env-context.outputs.release-version }}
-          path: ${{ steps.env-context.outputs.repo-name }}-${{ steps.env-context.outputs.release-version }}.tar.gz
+      - name: Compress And Push Artifacts
+        env:
+          ARTIFACT_REPO: "${{ env.REGISTRY }}/${{ github.repository }}/${{ env.ARTIFACT_PREFIX }}"
+          ARTIFACT_VERSION: ${GITHUB_REF#refs/tags/}
+        run: |
+          tar  --exclude='**/.git' -cvzf ${{ github.event.repository.name }}-${ARTIFACT_VERSION}.tar.gz ${{ github.event.repository.name }}
+          EXTRA_TAGS=""
+          if [[ "$ARTIFACT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            EXTRA_TAGS=",latest"
+          fi
+          oras push \
+            --annotation "org.opencontainers.image.title=uki-${{github.event.repository.name}} ${ARTIFACT_VERSION}" \
+            --annotation "org.opencontainers.image.ref.name=uki-${{github.event.repository.name}}:${ARTIFACT_VERSION}" \
+            --annotation "org.opencontainers.image.version=${ARTIFACT_VERSION}" \
+            --annotation "org.opencontainers.image.source=github.com/${{ github.repository }}" \
+            --annotation "org.opencontainers.image.revision=${{ github.sha }}" \
+            ${ARTIFACT_REPO}:${ARTIFACT_VERSION}${EXTRA_TAGS} \
+            ${{ github.event.repository.name }}-${ARTIFACT_VERSION}.tar.gz
+    #   - name: Create tar.gz archive
+    #     run: |
+    #       tar  --exclude='**/.git' -cvzf ${{ github.repository }}-${{ steps.env-context.outputs.release-version }}.tar.gz ${{ github.repository }}
+
+    #   - name: Upload artifact
+    #     uses: actions/upload-artifact@v4
+    #     with:
+    #       name: ${{ steps.env-context.outputs.repo-name }}-${{ steps.env-context.outputs.release-version }}
+    #       path: ${{ steps.env-context.outputs.repo-name }}-${{ steps.env-context.outputs.release-version }}.tar.gz
